@@ -160,9 +160,12 @@ export default function Home() {
   }, [applyRoomResponse, session]);
 
   useEffect(() => {
-    const directions: Record<string, Direction> = { ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down', ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right' };
+    if (!session || room?.status !== 'playing') return;
+    const directions: Record<string, Direction> = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
     const onKeyDown = (event: KeyboardEvent) => {
-      const direction = directions[event.key];
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
+      const direction = directions[event.code];
       if (!direction) return;
       event.preventDefault();
       if (event.repeat) return;
@@ -170,7 +173,7 @@ export default function Home() {
     };
     window.addEventListener('keydown', onKeyDown, { passive: false });
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [steer]);
+  }, [room?.status, session, steer]);
 
   useEffect(() => {
     const context = (document as Document & { modelContext?: ModelContext }).modelContext;
