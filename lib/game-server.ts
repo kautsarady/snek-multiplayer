@@ -50,14 +50,14 @@ function randomCode() {
   return [...bytes].map((byte) => CODE_CHARS[byte % CODE_CHARS.length]).join('');
 }
 
-function starterSnake(index: number): Pick<Player, 'snake' | 'direction' | 'queuedDirection'> {
+function starterSnake(index: number): Pick<Player, 'snake' | 'direction' | 'queuedDirection' | 'inputQueue'> {
   const starts: Array<{ snake: Cell[]; direction: Direction }> = [
     { snake: [{ x: 5, y: 6 }, { x: 4, y: 6 }, { x: 3, y: 6 }], direction: 'right' },
     { snake: [{ x: 26, y: 15 }, { x: 27, y: 15 }, { x: 28, y: 15 }], direction: 'left' },
     { snake: [{ x: 9, y: 16 }, { x: 9, y: 17 }, { x: 9, y: 18 }], direction: 'up' },
     { snake: [{ x: 23, y: 5 }, { x: 23, y: 4 }, { x: 23, y: 3 }], direction: 'down' },
   ];
-  return { ...starts[index], queuedDirection: starts[index].direction };
+  return { ...starts[index], queuedDirection: starts[index].direction, inputQueue: [] };
 }
 
 function makePlayer(id: string, name: string, index: number): Player {
@@ -95,6 +95,13 @@ function isOpposite(a: Direction, b: Direction) {
   return (a === 'up' && b === 'down') || (a === 'down' && b === 'up') || (a === 'left' && b === 'right') || (a === 'right' && b === 'left');
 }
 
+function queuedInputs(player: Player) {
+  if (Array.isArray(player.inputQueue)) return player.inputQueue;
+  return player.queuedDirection !== player.direction && !isOpposite(player.direction, player.queuedDirection)
+    ? [player.queuedDirection]
+    : [];
+}
+
 function move(cell: Cell, direction: Direction, state: RoomState): Cell {
   const delta = direction === 'up' ? [0, -1] : direction === 'down' ? [0, 1] : direction === 'left' ? [-1, 0] : [1, 0];
   return { x: (cell.x + delta[0] + state.width) % state.width, y: (cell.y + delta[1] + state.height) % state.height };
@@ -103,11 +110,22 @@ function move(cell: Cell, direction: Direction, state: RoomState): Cell {
 function tick(state: RoomState): RoomState {
   const nextPlayers = state.players.map((player) => {
     if (!player.alive) return player;
-    const direction = isOpposite(player.direction, player.queuedDirection) ? player.direction : player.queuedDirection;
+    const queue = queuedInputs(player);
+    const candidate = queue[0];
+    const direction = candidate && !isOpposite(player.direction, candidate) ? candidate : player.direction;
+    const inputQueue = candidate ? queue.slice(1) : queue;
     const head = move(player.snake[0], direction, state);
     const foodIndex = state.foods.findIndex((food) => food.x === head.x && food.y === head.y);
     const ate = foodIndex >= 0;
-    return { ...player, direction, snake: [head, ...(ate ? player.snake : player.snake.slice(0, -1))], score: player.score + (ate ? 100 : 0), ate: foodIndex };
+    return {
+      ...player,
+      direction,
+      queuedDirection: inputQueue.at(-1) ?? direction,
+      inputQueue,
+      snake: [head, ...(ate ? player.snake : player.snake.slice(0, -1))],
+      score: player.score + (ate ? 100 : 0),
+      ate: foodIndex,
+    };
   });
 
   const dead = new Set<string>();
@@ -139,10 +157,8 @@ function tick(state: RoomState): RoomState {
 
 function advance(state: RoomState, now = Date.now()) {
   if (state.status !== 'playing') return state;
-  const steps = Math.min(8, Math.floor((now - state.lastTick) / state.tickMs));
-  let next = state;
-  for (let i = 0; i < steps && next.status === 'playing'; i += 1) next = tick(next);
-  return steps > 0 ? { ...next, lastTick: state.lastTick + steps * state.tickMs } : next;
+  if (now - state.lastTick < state.tickMs) return state;
+  return { ...tick(state), lastTick: now };
 }
 
 async function readRow(code: string) {
@@ -165,11 +181,18 @@ export async function createRoom(name: string) {
   throw new GameError('Could not create a room. Try again.', 503);
 }
 
-export async function updateRoom(code: string, mutate: (state: RoomState) => RoomState | Promise<RoomState>) {
+export async function updateRoom(
+  code: string,
+  mutate: (state: RoomState) => RoomState | Promise<RoomState>,
+  { applyInputBeforeTick = false } = {},
+) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const row = await readRow(code);
     if (!row) throw new GameError('Room not found.', 404);
-    const state = await mutate(advance(JSON.parse(row.state_json) as RoomState));
+    const storedState = JSON.parse(row.state_json) as RoomState;
+    const state = applyInputBeforeTick
+      ? advance(await mutate(storedState))
+      : await mutate(advance(storedState));
     const now = Date.now();
     const result = await database().prepare('UPDATE rooms SET state_json = ?, version = version + 1, updated_at = ? WHERE code = ? AND version = ?').bind(JSON.stringify(state), now, code, row.version).run();
     if ((result.meta?.changes ?? 0) > 0) return { state, version: row.version + 1 };
@@ -211,8 +234,14 @@ export async function startRoom(code: string, playerId: string) {
 export async function steerRoom(code: string, playerId: string, direction: Direction) {
   return updateRoom(code, (state) => ({
     ...state,
-    players: state.players.map((player) => player.id === playerId && player.alive && !isOpposite(player.direction, direction) ? { ...player, queuedDirection: direction } : player),
-  }));
+    players: state.players.map((player) => {
+      if (player.id !== playerId || !player.alive) return player;
+      const queue = queuedInputs(player);
+      const previous = queue.at(-1) ?? player.direction;
+      if (direction === previous || isOpposite(previous, direction) || queue.length >= 2) return player;
+      return { ...player, queuedDirection: direction, inputQueue: [...queue, direction] };
+    }),
+  }), { applyInputBeforeTick: true });
 }
 
 export function jsonError(error: unknown) {

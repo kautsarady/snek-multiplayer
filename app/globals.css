@@ -92,7 +92,8 @@ h1 em { color: #a3ff4f; font-style: normal; text-shadow: 0 8px 34px rgba(163,255
 .board-live { position: relative; aspect-ratio: 32 / 22; touch-action: none; overflow: hidden; border: 1px solid rgba(255,255,255,.08); border-radius: 18px; background: #0b1020; box-shadow: inset 0 0 44px rgba(0,0,0,.42); }
 .grid-lines { position: absolute; inset: 0; opacity: .42; background-image: linear-gradient(rgba(130,144,190,.14) 1px, transparent 1px), linear-gradient(90deg, rgba(130,144,190,.14) 1px, transparent 1px); background-size: calc(100% / var(--cols, 32)) calc(100% / var(--rows, 22)); }
 .snake-pod, .snack { --cell-w: calc(100% / var(--cols, 32)); --cell-h: calc(100% / var(--rows, 22)); position: absolute; left: calc(var(--x) * var(--cell-w) + var(--cell-w) * .08); top: calc(var(--y) * var(--cell-h) + var(--cell-h) * .08); width: calc(var(--cell-w) * .84); height: calc(var(--cell-h) * .84); }
-.snake-pod { z-index: var(--pod-z); border-radius: 42%; background: var(--pod-color); box-shadow: 0 0 12px color-mix(in srgb, var(--pod-color) 46%, transparent), inset 0 2px 3px rgba(255,255,255,.45), inset 0 -2px 4px rgba(0,0,0,.22); transition: left 145ms linear, top 145ms linear, opacity .2s, filter .2s; }
+.snake-pod { z-index: var(--pod-z); border-radius: 42%; background: var(--pod-color); box-shadow: 0 0 12px color-mix(in srgb, var(--pod-color) 46%, transparent), inset 0 2px 3px rgba(255,255,255,.45), inset 0 -2px 4px rgba(0,0,0,.22); transition: left 145ms cubic-bezier(.2,.75,.25,1), top 145ms cubic-bezier(.2,.75,.25,1), opacity .2s, filter .2s; will-change: left, top; }
+.snake-pod.wrap-jump { transition-property: opacity, filter; }
 .snake-pod.mine { box-shadow: 0 0 16px color-mix(in srgb, var(--pod-color) 65%, transparent), inset 0 2px 3px rgba(255,255,255,.5), inset 0 -2px 4px rgba(0,0,0,.22); }
 .snake-pod.head { border-radius: 48% 48% 38% 38%; transform: scale(1.16); }
 .snake-pod.out { opacity: .25; filter: saturate(.2); }

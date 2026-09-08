@@ -14,8 +14,8 @@ type ModelContext = { registerTool: (tool: Record<string, unknown>, options?: { 
 const SAMPLE_ROOM: RoomState = {
   code: 'MINTY', hostId: 'minty', width: 32, height: 22, tickMs: 170, status: 'playing', lastTick: 0, winnerId: null, round: 1,
   players: [
-    { id: 'minty', name: 'Minty', color: '#a3ff4f', score: 1200, alive: true, direction: 'right', queuedDirection: 'right', snake: [{ x: 9, y: 6 }, { x: 8, y: 6 }, { x: 7, y: 6 }, { x: 6, y: 6 }, { x: 5, y: 6 }] },
-    { id: 'bubble', name: 'Bubble', color: '#ff70a6', score: 800, alive: true, direction: 'left', queuedDirection: 'left', snake: [{ x: 20, y: 14 }, { x: 21, y: 14 }, { x: 22, y: 14 }, { x: 23, y: 14 }] },
+    { id: 'minty', name: 'Minty', color: '#a3ff4f', score: 1200, alive: true, direction: 'right', queuedDirection: 'right', inputQueue: [], snake: [{ x: 9, y: 6 }, { x: 8, y: 6 }, { x: 7, y: 6 }, { x: 6, y: 6 }, { x: 5, y: 6 }] },
+    { id: 'bubble', name: 'Bubble', color: '#ff70a6', score: 800, alive: true, direction: 'left', queuedDirection: 'left', inputQueue: [], snake: [{ x: 20, y: 14 }, { x: 21, y: 14 }, { x: 22, y: 14 }, { x: 23, y: 14 }] },
   ],
   foods: [{ x: 15, y: 10 }, { x: 27, y: 4 }],
 };
@@ -31,6 +31,14 @@ async function api<T>(path: string, options?: RequestInit) {
 
 function ArenaBoard({ state, playerId, onSteer }: { state: RoomState; playerId?: string; onSteer?: (direction: Direction) => void }) {
   const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const wrappedPods = new Set<string>();
+
+  state.players.forEach((player) => player.snake.forEach((cell, index) => {
+    const trailingCell = player.snake[index + 1];
+    if (trailingCell && (Math.abs(trailingCell.x - cell.x) > 1 || Math.abs(trailingCell.y - cell.y) > 1)) {
+      wrappedPods.add(`${player.id}-${index}`);
+    }
+  }));
 
   function finishSwipe(event: React.TouchEvent) {
     if (!touchStart.current || !onSteer) return;
@@ -55,7 +63,7 @@ function ArenaBoard({ state, playerId, onSteer }: { state: RoomState; playerId?:
       ))}
       {state.players.flatMap((player) => player.snake.map((cell, index) => (
         <span
-          className={`snake-pod ${index === 0 ? `head dir-${player.direction}` : ''} ${!player.alive ? 'out' : ''} ${player.id === playerId ? 'mine' : ''}`}
+          className={`snake-pod ${index === 0 ? `head dir-${player.direction}` : ''} ${!player.alive ? 'out' : ''} ${player.id === playerId ? 'mine' : ''} ${wrappedPods.has(`${player.id}-${index}`) ? 'wrap-jump' : ''}`}
           key={`${player.id}-${index}`}
           style={{ '--pod-color': player.color, '--x': cell.x, '--y': cell.y, '--pod-z': player.snake.length - index } as React.CSSProperties}
         >{index === 0 && <i aria-hidden="true"><b>•</b><b>•</b></i>}</span>
@@ -78,6 +86,14 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const latestVersion = useRef(-1);
+  const inputChain = useRef<Promise<void>>(Promise.resolve());
+
+  const applyRoomResponse = useCallback((result: RoomResponse) => {
+    if (result.version < latestVersion.current) return;
+    latestVersion.current = result.version;
+    setRoom(result.state);
+  }, []);
 
   const enterRoom = useCallback(async (action: 'create' | 'join', suppliedName?: string, suppliedCode?: string) => {
     const chosenName = (suppliedName ?? name).trim();
@@ -92,6 +108,7 @@ export default function Home() {
       setName(chosenName);
       setRoomCode(result.state.code);
       setSession({ playerId: result.playerId, roomCode: result.state.code });
+      latestVersion.current = result.version;
       setRoom(result.state);
       return { roomCode: result.state.code, playerId: result.playerId, status: result.state.status };
     } finally {
@@ -110,31 +127,37 @@ export default function Home() {
     setError('');
     try {
       const result = await api<RoomResponse>(`/api/rooms/${session.roomCode}/start`, { method: 'POST', body: JSON.stringify({ playerId: session.playerId }) });
-      setRoom(result.state);
+      applyRoomResponse(result);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not start the round.');
     } finally { setBusy(false); }
-  }, [session]);
+  }, [applyRoomResponse, session]);
 
   const steer = useCallback((direction: Direction) => {
     if (!session || room?.status !== 'playing') return;
-    void api<RoomResponse>(`/api/rooms/${session.roomCode}/input`, { method: 'POST', body: JSON.stringify({ playerId: session.playerId, direction }) }).then((result) => setRoom(result.state)).catch(() => undefined);
-  }, [room?.status, session]);
+    inputChain.current = inputChain.current.then(async () => {
+      const result = await api<RoomResponse>(`/api/rooms/${session.roomCode}/input`, { method: 'POST', body: JSON.stringify({ playerId: session.playerId, direction }) });
+      applyRoomResponse(result);
+    }).catch(() => undefined);
+  }, [applyRoomResponse, room?.status, session]);
 
   useEffect(() => {
     if (!session) return;
     let active = true;
+    let timer = 0;
     const poll = async () => {
       try {
         const result = await api<RoomResponse>(`/api/rooms/${session.roomCode}`);
-        if (active) { setRoom(result.state); setError(''); }
+        if (active) { applyRoomResponse(result); setError(''); }
       } catch (caught) {
         if (active && caught instanceof Error && !caught.message.includes('busy')) setError(caught.message);
+      } finally {
+        if (active) timer = window.setTimeout(() => void poll(), 90);
       }
     };
-    const timer = window.setInterval(() => void poll(), 135);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [session]);
+    void poll();
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [applyRoomResponse, session]);
 
   useEffect(() => {
     const directions: Record<string, Direction> = { ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down', ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right' };
@@ -142,6 +165,7 @@ export default function Home() {
       const direction = directions[event.key];
       if (!direction) return;
       event.preventDefault();
+      if (event.repeat) return;
       steer(direction);
     };
     window.addEventListener('keydown', onKeyDown, { passive: false });

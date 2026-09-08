@@ -9,6 +9,7 @@ export type Player = {
   snake: Cell[];
   direction: Direction;
   queuedDirection: Direction;
+  inputQueue: Direction[];
   score: number;
   alive: boolean;
 };
