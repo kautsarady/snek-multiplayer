@@ -539,11 +539,15 @@ export class SnekRoom extends DurableObject<RealtimeEnv> {
     this.broadcast();
   }
 
-  webSocketClose() {
+  webSocketClose(ws: WebSocket, code: number, reason: string) {
+    const closeCode =
+      code === 1005 || code === 1006 || code === 1015 ? 1000 : code;
+    ws.close(closeCode, reason.slice(0, 123));
     if (this.ctx.getWebSockets().length === 0) this.stopLoop();
   }
 
-  webSocketError() {
+  webSocketError(ws: WebSocket) {
+    ws.close(1011, 'Connection error');
     if (this.ctx.getWebSockets().length === 0) this.stopLoop();
   }
 }
