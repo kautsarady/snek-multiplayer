@@ -12,6 +12,8 @@ A live multiplayer reimagining of the original [Snek](https://github.com/kautsar
 
 The arena wraps at every edge and uses a 32 × 22 grid.
 
+Each room runs in one authoritative Cloudflare Durable Object. The server accepts controls and pushes synchronized state over WebSockets on an 80 ms game tick; the browser smoothly interpolates each movement between ticks.
+
 ## Development
 
 ```bash
@@ -19,8 +21,10 @@ npm install
 npm run dev
 ```
 
-Database schema changes are defined in `db/schema.ts` and generated with:
+Run the real-time game server locally in a second terminal:
 
 ```bash
-npm run db:generate
+npm run realtime:dev
 ```
+
+Validate both surfaces with `npm run build` and `npm run realtime:check`.

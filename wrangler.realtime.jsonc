@@ -1,0 +1,37 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "snek-multiplayer-realtime",
+  "main": "realtime-worker/index.ts",
+  "account_id": "4cccbbe71cc22672cfd68e4de3d8b131",
+  "compatibility_date": "2026-09-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SNEK_ROOMS",
+        "class_name": "SnekRoom",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["SnekRoom"],
+    },
+  ],
+  "vars": {
+    "ALLOWED_ORIGINS": "https://snek-arena.kautsarady.chatgpt.site,http://localhost:3000",
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "head_sampling_rate": 1,
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.1,
+    },
+  },
+}
