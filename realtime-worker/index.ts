@@ -539,13 +539,11 @@ export class SnekRoom extends DurableObject<RealtimeEnv> {
     this.broadcast();
   }
 
-  async webSocketClose(ws: WebSocket, code: number, reason: string) {
-    ws.close(code, reason);
+  webSocketClose() {
     if (this.ctx.getWebSockets().length === 0) this.stopLoop();
   }
 
-  async webSocketError(ws: WebSocket) {
-    ws.close(1011, 'Connection error');
+  webSocketError() {
     if (this.ctx.getWebSockets().length === 0) this.stopLoop();
   }
 }
